@@ -16,9 +16,11 @@ namespace Semantics.AzFunction
         public static async Task<IActionResult> Run (
             [HttpTrigger (AuthorizationLevel.Anonymous, "get", "post", Route = null)] HttpRequest req,
             ILogger log) {
+
             var azureServiceProvider = new AzureServiceTokenProvider ();
             var authenticationCallback = new KeyVaultClient.AuthenticationCallback (azureServiceProvider.KeyVaultTokenCallback);
             var keyVaultClient = new KeyVaultClient (authenticationCallback);
+            
             var appconfigConnectionStringSecretUri = Environment.GetEnvironmentVariable ("appconfig-kv-secret-uri");
             var appconfigConnectionString = await keyVaultClient.GetSecretAsync (appconfigConnectionStringSecretUri);
             var configurationBuilder = new ConfigurationBuilder ();
