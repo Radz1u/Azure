@@ -17,40 +17,42 @@ namespace Company.Function {
             [HttpTrigger (AuthorizationLevel.Anonymous, "get", "post", Route = null)] HttpRequest req,
             ILogger log) {
             var blobUrl = Environment.GetEnvironmentVariable ("BLOB_URL");
-            var query = GenerateSASToken ();
+            var sasToken = GenerateSASToken ();
             log.LogInformation ("C# HTTP trigger function processed a request.");
 
-            var blobUri = new UriBuilder (blobUrl) { Query = query }.Uri;
-            string name = "";
+            var blobUri = new UriBuilder (blobUrl) { Query = sasToken }.Uri;
+            string content = "";
 
-            var blobClient2 = new BlobClient (blobUri);
-            using (var streamReader = new StreamReader (blobClient2.Download ().Value.Content)) {
-                name = streamReader.ReadToEnd ();
+            var blobClient = new BlobClient (blobUri);
+            using (var streamReader = new StreamReader (blobClient.Download ().Value.Content)) {
+                content = streamReader.ReadToEnd ();
             }
 
-            return name != null ?
-                (ActionResult) new OkObjectResult ($"Hello, {name}") :
-                new BadRequestObjectResult ("Please pass a name on the query string or in the request body");
+            return String.IsNullOrWhiteSpace(content)?
+                new BadRequestObjectResult ("There is no content, or the SAS token is invalid"):
+                (ActionResult) new OkObjectResult ($"Content: {content}") ;
         }
 
         private static string GenerateSASToken () {
-            var clientId = Environment.GetEnvironmentVariable ("IDENTITY_CLIENT_ID");
             var storageUrl = Environment.GetEnvironmentVariable ("STORAGE_ACCOUNT_URL");
             var blobUrl = Environment.GetEnvironmentVariable ("BLOB_URL");
-            var identity = new ManagedIdentityCredential (clientId);
-            var storageUri = new Uri (storageUrl);
-            var blobUri = new Uri (blobUrl);
-            var blobClient = new BlobClient (blobUri, identity);
+            var identity = CreateManagedIdentityCredential ();
+            var blobClient = new BlobClient (new Uri (blobUrl), identity);
             var blobSasBuilder = new Azure.Storage.Sas.BlobSasBuilder ();
             blobSasBuilder.BlobContainerName = blobClient.BlobContainerName;
             blobSasBuilder.BlobName = blobClient.Name;
             blobSasBuilder.SetPermissions (Azure.Storage.Sas.BlobSasPermissions.All);
             blobSasBuilder.ExpiresOn = new DateTimeOffset (DateTime.Now.AddDays (1));
-            var blobServiceClient = new BlobServiceClient (storageUri, identity);
+            var blobServiceClient = new BlobServiceClient (new Uri (storageUrl), identity);
             var userDelegationKey = blobServiceClient.GetUserDelegationKey (new DateTimeOffset (DateTime.Now), new DateTimeOffset (DateTime.Now.AddDays (2)));
             var parameters = blobSasBuilder.ToSasQueryParameters (userDelegationKey, blobClient.AccountName);
 
             return parameters.ToString ();
+        }
+
+        private static ManagedIdentityCredential CreateManagedIdentityCredential () {
+            var clientId = Environment.GetEnvironmentVariable ("IDENTITY_CLIENT_ID");
+            return new ManagedIdentityCredential (clientId);
         }
     }
 }
